@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout Code Repository
       uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set Environment Runtime
       uses: actions/setup-python@v4
@@ -30,10 +32,11 @@ jobs:
       run: python sync.py
 
     - name: Commit Fresh Sheet Changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config --global user.name 'Cloud Sync Operator'
         git config --global user.email 'operator@cloudsync.local'
         git add salesman_prices.xlsx
         git commit -m "Auto-update: Fresh prices snapshot synced" || exit 0
-        git push
-        
+        git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
