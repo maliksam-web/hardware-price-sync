@@ -1,0 +1,38 @@
+name: Automated Price Sync
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Executes automatically at 8:00 AM PKT daily
+  workflow_dispatch: # Allows manual trigger from your smartphone anytime
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code Repository
+      uses: actions/checkout@v3
+
+    - name: Set Environment Runtime
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Libraries
+      run: |
+        pip install playwright pandas openpyxl
+        playwright install chromium
+
+    - name: Execute Scraper Operation
+      env:
+        STORE_USER: ${{ secrets.STORE_USER }}
+        STORE_PASS: ${{ secrets.STORE_PASS }}
+      run: python sync.py
+
+    - name: Commit Fresh Sheet Changes
+      run: |
+        git config --global user.name 'Cloud Sync Operator'
+        git config --global user.email 'operator@cloudsync.local'
+        git add salesman_prices.xlsx
+        git commit -m "Auto-update: Fresh prices snapshot synced" || exit 0
+        git push
+        
