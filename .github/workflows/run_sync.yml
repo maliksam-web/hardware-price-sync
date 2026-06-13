@@ -2,7 +2,8 @@ name: Automated Price Sync
 
 on:
   schedule:
-    - cron: '0 3 * * *' # Executes automatically at 8:00 AM PKT daily
+    # Runs hourly 9:00 AM to 8:00 PM PKT (4:00 AM to 3:00 PM UTC), Monday to Thursday + Saturday & Sunday
+    - cron: '0 4-15 * * 0-4,6'
   workflow_dispatch: # Allows manual trigger from your smartphone anytime
 
 jobs:
