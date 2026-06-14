@@ -50,7 +50,7 @@ st.markdown("""
 # ---------- HEADER ----------
 st.markdown("""
     <div class="main-header">
-        <h1>🔧 Hafiz Hardware</h1>
+        <h1>🔧 Hafiz Hardware Store</h1>
         <p>LIVE SALESMAN PRICE DESK</p>
     </div>
 """, unsafe_allow_html=True)
