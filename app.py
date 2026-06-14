@@ -4,7 +4,7 @@ import os
 
 st.set_page_config(page_title="Hafiz Hardware Lookup", page_icon="🔍", layout="centered")
 
-st.title("🔍 Hafiz Hardware")
+st.title("🔍 Hafiz Hardware Store")
 st.subheader("Live Salesman Price Desk")
 
 @st.cache_data(ttl=600)
