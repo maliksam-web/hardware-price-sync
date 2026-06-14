@@ -4,14 +4,14 @@ from playwright.sync_api import sync_playwright
 import pandas as pd
 
 PORTAL_URL = "https://hafizhardware.bahestech.com"
-ITEMS_TABLE_URL = "https://hafizhardware.bahestech.com/admin/products" 
+ITEMS_TABLE_URL = "https://hafizhardware.bahestech.com/admin/products"
 
 USERNAME = os.environ.get('STORE_USER')
 PASSWORD = os.environ.get('STORE_PASS')
 
-USER_BOX = "input[placeholder='Enter E-mail']"      
-PASS_BOX = "input[placeholder='Enter Password']"   
-LOGIN_BTN = "button:has-text('Login'), input[type='submit']"  
+USER_BOX = "input[placeholder='Enter E-mail']"
+PASS_BOX = "input[placeholder='Enter Password']"
+LOGIN_BTN = "button:has-text('Login'), input[type='submit']"
 
 def run_scraper():
     print("🚀 Booting heavy-load background cloud browser...")
@@ -19,9 +19,8 @@ def run_scraper():
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1280, 'height': 720})
         page = context.new_page()
-        
+
         try:
-            # 1. Login to the portal
             page.goto(PORTAL_URL, timeout=90000)
             page.wait_for_selector(USER_BOX, timeout=20000)
             page.fill(USER_BOX, USERNAME)
@@ -29,40 +28,32 @@ def run_scraper():
             page.click(LOGIN_BTN)
             page.wait_for_load_state("networkidle")
             print("🔒 Logged in successfully.")
-            
-            # 2. Open products panel with an extended 3-minute timeout window
+
             print("⏳ Navigating to products dashboard (Allowing extra time for 2,000+ items)...")
             page.goto(ITEMS_TABLE_URL, timeout=180000)
-            
-            # Wait for the main table body structure to appear
             page.wait_for_selector("table", timeout=60000)
-            
-            # Scroll down slowly to force the website to load all rows into the browser memory
+
             print("📜 Scrolling data rows to ensure complete rendering...")
             for _ in range(5):
                 page.mouse.wheel(0, 2000)
                 time.sleep(1)
-                
+
             page.wait_for_load_state("networkidle")
-            
-            # 3. Read the fully loaded web table
+
             table_html = page.locator("table").first.inner_html()
             df_list = pd.read_html(f"<table>{table_html}</table>")
             raw_df = df_list[0]
-            
+
             print(f"📋 Data extracted successfully! Rows found: {len(raw_df)}")
-            
-            # 4. Clean and filter columns cleanly ('Name', 'Sale Price')
+
             salesman_view = raw_df[["Name", "Sale Price"]].copy()
             salesman_view.columns = ["Item Name", "Retail Price"]
-            
-            # Save the genuine inventory sheet
+
             salesman_view.to_excel("salesman_prices.xlsx", index=False)
             print("✅ 'salesman_prices.xlsx' fully populated with actual hardware rates!")
-            
+
         except Exception as error_log:
             print(f"❌ Processing interruption: {error_log}")
-            # Real file generation block to protect workflow states
             if not os.path.exists("salesman_prices.xlsx"):
                 df_err = pd.DataFrame([{"Item Name": "System updating, please check back shortly.", "Retail Price": 0}])
                 df_err.to_excel("salesman_prices.xlsx", index=False)
@@ -72,4 +63,3 @@ def run_scraper():
 
 if __name__ == "__main__":
     run_scraper()
-            
