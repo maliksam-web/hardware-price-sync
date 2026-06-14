@@ -31,6 +31,8 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
+                    "Stock Quantity": st.column_config.NumberColumn("In Stock", format="%d"),
+                    "Purchase Price": st.column_config.NumberColumn("Cost Price (Bargain Floor)", format="Rs. %d"),
                     "Retail Price": st.column_config.NumberColumn("Selling Price", format="Rs. %d")
                 }
             )
