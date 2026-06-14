@@ -2,9 +2,9 @@ name: Automated Price Sync
 
 on:
   schedule:
-    # Runs hourly 9:00 AM to 8:00 PM PKT (4:00 AM to 3:00 PM UTC), Monday to Thursday + Saturday & Sunday
+    # Hourly 9AM-8PM PKT (4AM-3PM UTC), every day except Friday
     - cron: '0 4-15 * * 0-4,6'
-  workflow_dispatch: # Allows manual trigger from your smartphone anytime
+  workflow_dispatch:
 
 jobs:
   build-and-run:
@@ -22,7 +22,7 @@ jobs:
 
     - name: Install Libraries
       run: |
-        pip install playwright pandas openpyxl
+        pip install playwright pandas openpyxl lxml
         playwright install chromium
 
     - name: Execute Scraper Operation
