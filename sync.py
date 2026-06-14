@@ -57,32 +57,44 @@ def run_scraper():
                 if best_value:
                     select_element.select_option(label=best_value)
                     print(f"✅ Set entries per page to: {best_value}")
-                    page.wait_for_load_state("networkidle")
-                    time.sleep(2)
+                    page.wait_for_timeout(3000)
             except Exception as e:
                 print(f"⚠️ Could not adjust page size: {e}")
 
             # 4. Loop through every pagination page and collect rows
             all_rows = []
             page_num = 1
+            previous_first_name = None
 
             while True:
                 print(f"📜 Scraping page {page_num}...")
-                for _ in range(3):
-                    page.mouse.wheel(0, 2000)
-                    time.sleep(0.5)
-                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2000)
 
                 table_html = page.locator("table").first.inner_html()
                 df_list = pd.read_html(f"<table>{table_html}</table>")
                 raw_df = df_list[0]
 
-                # Drop the repeated footer row (Name == "Name")
                 if "Name" in raw_df.columns:
                     raw_df = raw_df[raw_df["Name"] != "Name"]
+                    raw_df = raw_df.dropna(subset=["Name"])
+
+                current_first_name = raw_df["Name"].iloc[0] if len(raw_df) > 0 else None
+
+                # If table content hasn't changed from the previous page, wait longer and re-read
+                if page_num > 1 and current_first_name == previous_first_name:
+                    print("   ⏳ Table not yet updated, waiting longer...")
+                    page.wait_for_timeout(4000)
+                    table_html = page.locator("table").first.inner_html()
+                    df_list = pd.read_html(f"<table>{table_html}</table>")
+                    raw_df = df_list[0]
+                    if "Name" in raw_df.columns:
+                        raw_df = raw_df[raw_df["Name"] != "Name"]
+                        raw_df = raw_df.dropna(subset=["Name"])
+                    current_first_name = raw_df["Name"].iloc[0] if len(raw_df) > 0 else None
 
                 all_rows.append(raw_df)
-                print(f"   -> {len(raw_df)} rows collected on this page.")
+                previous_first_name = current_first_name
+                print(f"   -> {len(raw_df)} rows collected on this page (first item: {current_first_name}).")
 
                 # Check the "Next" pagination button
                 next_li = page.locator("li.paginate_button.next, .paginate_button.next").first
@@ -95,22 +107,21 @@ def run_scraper():
                     print("✅ Reached the last page.")
                     break
 
-                next_li.locator("a").click()
-                page.wait_for_load_state("networkidle")
-                time.sleep(1.5)
+                next_li.click()
                 page_num += 1
 
                 if page_num > 250:
                     print("⚠️ Safety cap reached, stopping pagination loop.")
                     break
 
-            # 5. Combine and save (Item Name, Stock Quantity, Purchase Price, Retail Price)
+            # 5. Combine, dedupe, and save
             full_df = pd.concat(all_rows, ignore_index=True)
-            print(f"📋 Total rows collected across all pages: {len(full_df)}")
+            print(f"📋 Total rows collected across all pages (before dedupe): {len(full_df)}")
 
             salesman_view = full_df[["Name", "Quantity", "Purchase Price", "Sale Price"]].copy()
             salesman_view.columns = ["Item Name", "Stock Quantity", "Purchase Price", "Retail Price"]
             salesman_view = salesman_view.dropna(subset=["Item Name"])
+            salesman_view = salesman_view.drop_duplicates(subset=["Item Name"], keep="first")
 
             salesman_view.to_excel("salesman_prices.xlsx", index=False)
             print(f"✅ 'salesman_prices.xlsx' fully populated with {len(salesman_view)} hardware rates!")
