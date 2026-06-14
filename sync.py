@@ -33,72 +33,116 @@ def run_scraper():
             # 2. Open products page
             print("⏳ Navigating to products dashboard...")
             page.goto(ITEMS_TABLE_URL, timeout=180000)
-            page.wait_for_selector("table", timeout=60000)
+            page.wait_for_selector("table#dataTable", timeout=60000)
             page.wait_for_timeout(2000)
 
-            # 3. Set entries-per-page dropdown to the largest option (100)
+            # 3. Use DataTables 2.x jQuery API on #dataTable to show ALL rows
+            print("⚙️ Attempting DataTables API on #dataTable...")
             try:
-                select_element = page.locator("select").first
-                options = select_element.locator("option").all_text_contents()
-                print(f"📐 Page-size options found: {options}")
-
-                best_value = None
-                best_num = -1
-                for opt in options:
-                    opt_clean = opt.strip()
-                    if opt_clean.replace(",", "").isdigit():
-                        num = int(opt_clean.replace(",", ""))
-                        if num > best_num:
-                            best_num = num
-                            best_value = opt_clean
-
-                if best_value:
-                    select_element.select_option(label=best_value)
-                    print(f"✅ Set entries per page to: {best_value}")
-                    page.wait_for_timeout(3000)
-            except Exception as e:
-                print(f"⚠️ Could not adjust page size: {e}")
-
-            # 3b. DIAGNOSTIC: dump pagination structure info
-            try:
-                diag = page.evaluate("""
+                result = page.evaluate("""
                     () => {
-                        const result = {};
-                        result.hasJQuery = (typeof window.jQuery !== 'undefined');
-                        result.hasDollar = (typeof window.$ !== 'undefined');
-                        const allEls = document.querySelectorAll('*');
-                        for (const el of allEls) {
-                            if (el.children.length === 0 && el.textContent && el.textContent.includes('entries')) {
-                                let container = el;
-                                for (let i=0; i<4 && container.parentElement; i++) {
-                                    container = container.parentElement;
-                                }
-                                result.paginationHTML = container.outerHTML.substring(0, 2500);
-                                break;
+                        try {
+                            if (typeof $ !== 'undefined' && $.fn && $.fn.dataTable &&
+                                $.fn.dataTable.isDataTable('#dataTable')) {
+                                const table = $('#dataTable').DataTable();
+                                const total = table.page.info().recordsTotal;
+                                table.page.len(total > 0 ? total : 3000).draw('page');
+                                return 'success:' + total;
                             }
+                            return 'not-a-datatable';
+                        } catch (e) {
+                            return 'error:' + e.message;
                         }
-                        return result;
                     }
                 """)
-                print(f"🔍 hasJQuery={diag.get('hasJQuery')} hasDollar={diag.get('hasDollar')}")
-                print(f"🔍 PAGINATION_HTML_START>>>{diag.get('paginationHTML','NONE')}<<<PAGINATION_HTML_END")
+                print(f"⚙️ DataTables API result: {result}")
             except Exception as e:
-                print(f"🔍 Diagnostic failed: {e}")
+                print(f"⚠️ DataTables API approach failed: {e}")
+                result = "error"
 
-            # 4. Scrape current page (should be ~100 rows)
+            # Give the table time to redraw all rows, scroll to force rendering
+            page.wait_for_timeout(3000)
+            for _ in range(15):
+                page.mouse.wheel(0, 3000)
+                time.sleep(0.4)
+            page.wait_for_timeout(3000)
+
+            # 4. Read pagination info text to verify count
+            try:
+                info_text = page.locator("text=/Showing.*entries/i").first.inner_text()
+                print(f"ℹ️ Pagination info text: {info_text}")
+            except Exception as e:
+                print(f"⚠️ Could not read pagination info text: {e}")
+
+            # 5. Scrape the table
             all_rows = []
-            table_html = page.locator("table").first.inner_html()
+            table_html = page.locator("table#dataTable").first.inner_html()
             df_list = pd.read_html(f"<table>{table_html}</table>")
             raw_df = df_list[0]
             if "Name" in raw_df.columns:
                 raw_df = raw_df[raw_df["Name"] != "Name"]
                 raw_df = raw_df.dropna(subset=["Name"])
             all_rows.append(raw_df)
-            print(f"📋 Rows collected: {len(raw_df)}")
+            print(f"📋 Rows collected in single-page read: {len(raw_df)}")
 
-            # 5. Combine, dedupe, and save
+            # 6. Fallback: pagination button loop (DataTables 2.x markup)
+            if len(raw_df) < 500:
+                print("⚠️ Row count too low, falling back to pagination click loop...")
+                all_rows = []
+                page_num = 1
+                previous_first_name = None
+
+                while True:
+                    print(f"📜 Scraping page {page_num}...")
+                    page.wait_for_timeout(1500)
+
+                    table_html = page.locator("table#dataTable").first.inner_html()
+                    df_list = pd.read_html(f"<table>{table_html}</table>")
+                    raw_df = df_list[0]
+                    if "Name" in raw_df.columns:
+                        raw_df = raw_df[raw_df["Name"] != "Name"]
+                        raw_df = raw_df.dropna(subset=["Name"])
+
+                    current_first_name = raw_df["Name"].iloc[0] if len(raw_df) > 0 else None
+
+                    if page_num > 1 and current_first_name == previous_first_name:
+                        print("   ⏳ Table not yet updated, waiting longer...")
+                        page.wait_for_timeout(3000)
+                        table_html = page.locator("table#dataTable").first.inner_html()
+                        df_list = pd.read_html(f"<table>{table_html}</table>")
+                        raw_df = df_list[0]
+                        if "Name" in raw_df.columns:
+                            raw_df = raw_df[raw_df["Name"] != "Name"]
+                            raw_df = raw_df.dropna(subset=["Name"])
+                        current_first_name = raw_df["Name"].iloc[0] if len(raw_df) > 0 else None
+
+                    all_rows.append(raw_df)
+                    previous_first_name = current_first_name
+                    print(f"   -> {len(raw_df)} rows collected on this page (first item: {current_first_name}).")
+
+                    # DataTables 2.x "Next" button
+                    next_btn = page.locator("button.dt-paging-button[data-dt-idx='next']").first
+
+                    if next_btn.count() == 0:
+                        print("⚠️ No next button found. Ending pagination.")
+                        break
+
+                    is_disabled = next_btn.get_attribute("disabled")
+                    aria_disabled = next_btn.get_attribute("aria-disabled")
+                    if is_disabled is not None or aria_disabled == "true":
+                        print("✅ Reached the last page.")
+                        break
+
+                    next_btn.click()
+                    page_num += 1
+
+                    if page_num > 250:
+                        print("⚠️ Safety cap reached, stopping pagination loop.")
+                        break
+
+            # 7. Combine, dedupe, and save
             full_df = pd.concat(all_rows, ignore_index=True)
-            print(f"📋 Total rows collected (before dedupe): {len(full_df)}")
+            print(f"📋 Total rows collected across all pages (before dedupe): {len(full_df)}")
 
             salesman_view = full_df[["Name", "Quantity", "Purchase Price", "Sale Price"]].copy()
             salesman_view.columns = ["Item Name", "Stock Quantity", "Purchase Price", "Retail Price"]
